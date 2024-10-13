@@ -1,1 +1,5 @@
 python:alpine3.19
+php
+nginx
+redis
+mariadb
