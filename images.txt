@@ -1,2 +1,1 @@
-nginx
-
+python:alpine3.19
