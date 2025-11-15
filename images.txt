@@ -15,3 +15,4 @@ kuaifan/minder:0.1.3
 kuaifan/dooapprove:0.0.11
 kuaifan/dooai:0.2.0
 kuaifan/doookr:0.4.3
+hanxi/xiaomusic
