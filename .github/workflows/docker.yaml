@@ -2,6 +2,8 @@ name: Docker
 
 on:
   workflow_dispatch:
+  watch:
+    types: started
   push:
     branches: [ main ]
   schedule:
