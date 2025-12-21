@@ -22,3 +22,6 @@ postgres
 ollama/ollama
 python
 docmost/docmost
+ghcr.io/open-webui/open-webui:main
+ghcr.io/open-webui/open-webui:ollama
+ghcr.io/open-webui/open-webui:main-slim
