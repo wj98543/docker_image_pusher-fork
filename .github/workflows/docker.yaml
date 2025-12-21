@@ -144,8 +144,10 @@ jobs:
               
               # 将@sha256:等字符删除
               image_name_tag="${image_name_tag%%@*}"
-              # 修复bug：确保标签也被包含在新的镜像名称中
-              new_image="$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$platform_prefix$name_space_prefix${image_name}_$image_tag"
+              # 修复bug：确保标签也被包含在新的镜像名称中，并转为小写
+              new_image_name="$platform_prefix$name_space_prefix${image_name}_$image_tag"
+              new_image_name=$(echo "$new_image_name" | tr '[:upper:]' '[:lower:]')
+              new_image="$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$new_image_name"
               echo "docker tag $image $new_image"
               docker tag $image $new_image
               echo "docker push $new_image"
