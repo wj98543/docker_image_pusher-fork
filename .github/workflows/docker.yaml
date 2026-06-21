@@ -58,7 +58,14 @@ jobs:
 
       - name: Build and push image Aliyun
         run: |
-          docker login -u $ALIYUN_REGISTRY_USER -p $ALIYUN_REGISTRY_PASSWORD $ALIYUN_REGISTRY
+          echo "$ALIYUN_REGISTRY_PASSWORD" | docker login -u $ALIYUN_REGISTRY_USER --password-stdin $ALIYUN_REGISTRY
+          
+          # 检查 images.txt 是否存在
+          if [ ! -f "images.txt" ]; then
+              echo "❌ images.txt not found!"
+              exit 1
+          fi
+          
           # 数据预处理,判断镜像是否重名
           declare -A duplicate_images
           declare -A temp_map
@@ -99,6 +106,11 @@ jobs:
               fi       
           done < images.txt
 
+          # 统计变量
+          total_count=0
+          skip_count=0
+          success_count=0
+          fail_count=0
 
           while IFS= read -r line || [ -n "$line" ]; do
               # 忽略空行与注释
@@ -107,8 +119,13 @@ jobs:
                   continue
               fi
 
-              echo "docker pull $line"
-              docker pull $line
+              total_count=$((total_count + 1))
+              
+              echo "========================================"
+              echo "Processing [$total_count]: $line"
+              echo "========================================"
+              
+              # 获取平台信息
               platform=$(echo "$line" | awk -F'--platform[ =]' '{if (NF>1) print $2}' | awk '{print $1}')
               echo "platform is $platform"
               # 如果存在架构信息 将架构信息拼到镜像名称前面
@@ -118,6 +135,7 @@ jobs:
                   platform_prefix="${platform//\//_}_"
               fi
               echo "platform_prefix is $platform_prefix"
+              
               # 获取镜像的完整名称，例如kasmweb/nginx:1.25.3（命名空间/镜像名:版本号）
               image=$(echo "$line" | awk '{print $NF}')
 
@@ -144,14 +162,58 @@ jobs:
               
               # 将@sha256:等字符删除
               image_name_tag="${image_name_tag%%@*}"
-              # 修复bug：确保标签也被包含在新的镜像名称中，并转为小写
+              # 构建新的镜像名称并转为小写
               new_image_name="$platform_prefix$name_space_prefix${image_name}_$image_tag"
               new_image_name=$(echo "$new_image_name" | tr '[:upper:]' '[:lower:]')
               new_image="$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$new_image_name"
+              
+              # ✅ 检查阿里云仓库是否已存在该镜像
+              echo "Checking if image exists in Aliyun registry..."
+              if docker manifest inspect $new_image > /dev/null 2>&1; then
+                  echo "✅ Image already exists: $new_image"
+                  echo "⏭️  Skipping..."
+                  skip_count=$((skip_count + 1))
+                  continue
+              else
+                  echo "📥 Image not found in registry, pulling..."
+              fi
+              
+              # 拉取镜像（带重试机制）
+              retry_count=0
+              max_retries=3
+              pull_success=false
+              
+              while [ $retry_count -lt $max_retries ]; do
+                  if docker pull $line; then
+                      pull_success=true
+                      break
+                  else
+                      retry_count=$((retry_count + 1))
+                      echo "⚠️  Pull failed (attempt $retry_count/$max_retries), retrying..."
+                      sleep 5
+                  fi
+              done
+              
+              if [ "$pull_success" = false ]; then
+                  echo "❌ Failed to pull $line after $max_retries attempts"
+                  fail_count=$((fail_count + 1))
+                  continue
+              fi
+              
+              # 标记并推送镜像
               echo "docker tag $image $new_image"
               docker tag $image $new_image
               echo "docker push $new_image"
-              docker push $new_image
+              
+              if docker push $new_image; then
+                  echo "✅ Successfully pushed: $new_image"
+                  success_count=$((success_count + 1))
+              else
+                  echo "❌ Failed to push: $new_image"
+                  fail_count=$((fail_count + 1))
+                  # 继续处理下一个镜像
+              fi
+              
               echo "开始清理磁盘空间"
               echo "=============================================================================="
               df -hT
@@ -164,3 +226,14 @@ jobs:
               echo "=============================================================================="     
               
           done < images.txt
+          
+          # 输出统计信息
+          echo ""
+          echo "=========================================="
+          echo "📊 Docker Sync Summary"
+          echo "=========================================="
+          echo "Total images: $total_count"
+          echo "✅ Success: $success_count"
+          echo "⏭️  Skipped (already exists): $skip_count"
+          echo "❌ Failed: $fail_count"
+          echo "=========================================="
